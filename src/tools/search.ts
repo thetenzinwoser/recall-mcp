@@ -4,10 +4,14 @@ import { searchSimilar, SourceType } from '../services/vectordb.js';
 
 const sourceTypeEnum = z.enum(['strategy-doc', 'granola-transcript']);
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD');
+
 export const searchInputSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   limit: z.number().min(1).max(20).optional().default(5),
   sourceTypes: z.array(sourceTypeEnum).optional(),
+  afterDate: isoDate.optional(),
+  beforeDate: isoDate.optional(),
 });
 
 export type SearchInput = z.infer<typeof searchInputSchema>;
@@ -31,6 +35,8 @@ export async function semanticSearch(args: unknown): Promise<string> {
   const results = await searchSimilar(queryEmbedding, {
     limit: input.limit,
     sourceTypes: input.sourceTypes as SourceType[] | undefined,
+    afterDate: input.afterDate,
+    beforeDate: input.beforeDate,
   });
 
   if (results.length === 0) {
@@ -95,6 +101,14 @@ export const searchTool = {
           enum: ['strategy-doc', 'granola-transcript'],
         },
         description: 'Filter by source type. Omit to search all sources. Use ["strategy-doc"] for docs only, ["granola-transcript"] for transcripts only.',
+      },
+      afterDate: {
+        type: 'string',
+        description: 'Only return transcripts on or after this date (YYYY-MM-DD). Automatically scopes to transcripts.',
+      },
+      beforeDate: {
+        type: 'string',
+        description: 'Only return transcripts on or before this date (YYYY-MM-DD). Automatically scopes to transcripts.',
       },
     },
     required: ['query'],

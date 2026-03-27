@@ -75,24 +75,40 @@ export interface SearchResult {
 export interface SearchOptions {
   limit?: number;
   sourceTypes?: SourceType[];
+  afterDate?: string;  // ISO date YYYY-MM-DD, inclusive
+  beforeDate?: string; // ISO date YYYY-MM-DD, inclusive
 }
 
 export async function searchSimilar(
   embedding: number[],
   options: SearchOptions = {}
 ): Promise<SearchResult[]> {
-  const { limit = 5, sourceTypes } = options;
+  const { limit = 5, sourceTypes, afterDate, beforeDate } = options;
   const coll = await getCollection();
 
-  const whereFilter = sourceTypes && sourceTypes.length > 0
-    ? { sourceType: sourceTypes.length === 1 ? sourceTypes[0] : { $in: sourceTypes } }
-    : undefined;
+  const conditions: Record<string, unknown>[] = [];
+
+  if (sourceTypes && sourceTypes.length > 0) {
+    conditions.push({ sourceType: sourceTypes.length === 1 ? sourceTypes[0] : { $in: sourceTypes } });
+  } else if (afterDate || beforeDate) {
+    // Date filters only apply to transcripts - scope implicitly
+    conditions.push({ sourceType: 'granola-transcript' });
+  }
+
+  if (afterDate) conditions.push({ meetingDate: { $gte: afterDate } });
+  if (beforeDate) conditions.push({ meetingDate: { $lte: beforeDate } });
+
+  const whereFilter = conditions.length === 0
+    ? undefined
+    : conditions.length === 1
+      ? conditions[0]
+      : { $and: conditions };
 
   const results = await coll.query({
     queryEmbeddings: [embedding],
     nResults: limit,
     include: [IncludeEnum.Documents, IncludeEnum.Metadatas, IncludeEnum.Distances],
-    where: whereFilter,
+    where: whereFilter as Record<string, unknown>,
   });
 
   if (!results.ids[0] || results.ids[0].length === 0) {
