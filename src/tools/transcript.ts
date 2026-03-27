@@ -9,7 +9,7 @@ export const getTranscriptInputSchema = z.object({
   meetingId: z.string().optional(),
   searchTitle: z.string().optional(),
   date: z.string().optional(),
-  listRecent: z.number().min(1).max(50).optional(),
+  listRecent: z.coerce.number().min(1).max(50).optional(),
 });
 
 export type GetTranscriptInput = z.infer<typeof getTranscriptInputSchema>;
@@ -52,8 +52,7 @@ function extractDateFromSearch(search: string): { cleanedSearch: string; dateStr
   if (monthMatch) {
     const month = monthNames[monthMatch[1].toLowerCase()];
     const day = monthMatch[2].padStart(2, '0');
-    // Assume current year context (2026)
-    const dateStr = `2026-${month}-${day}`;
+    const dateStr = `${new Date().getFullYear()}-${month}-${day}`;
     return {
       cleanedSearch: search.replace(monthMatch[0], '').trim(),
       dateStr,
