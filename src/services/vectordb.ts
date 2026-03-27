@@ -86,17 +86,18 @@ export async function searchSimilar(
   const { limit = 5, sourceTypes, afterDate, beforeDate } = options;
   const coll = await getCollection();
 
+  // ChromaDB v1 only supports comparison operators ($gte/$lte) on numeric fields,
+  // not strings. Date filtering is done client-side after fetching a larger pool.
+  const hasDateFilter = !!(afterDate || beforeDate);
+
   const conditions: Record<string, unknown>[] = [];
 
   if (sourceTypes && sourceTypes.length > 0) {
     conditions.push({ sourceType: sourceTypes.length === 1 ? sourceTypes[0] : { $in: sourceTypes } });
-  } else if (afterDate || beforeDate) {
+  } else if (hasDateFilter) {
     // Date filters only apply to transcripts - scope implicitly
     conditions.push({ sourceType: 'granola-transcript' });
   }
-
-  if (afterDate) conditions.push({ meetingDate: { $gte: afterDate } });
-  if (beforeDate) conditions.push({ meetingDate: { $lte: beforeDate } });
 
   const whereFilter = conditions.length === 0
     ? undefined
@@ -104,9 +105,12 @@ export async function searchSimilar(
       ? conditions[0]
       : { $and: conditions };
 
+  // Fetch a larger pool when date filtering so we have enough after client-side filtering
+  const fetchLimit = hasDateFilter ? Math.min(limit * 5, 100) : limit;
+
   const results = await coll.query({
     queryEmbeddings: [embedding],
-    nResults: limit,
+    nResults: fetchLimit,
     include: [IncludeEnum.Documents, IncludeEnum.Metadatas, IncludeEnum.Distances],
     where: whereFilter as Record<string, unknown>,
   });
@@ -115,7 +119,7 @@ export async function searchSimilar(
     return [];
   }
 
-  return results.ids[0].map((id, i) => {
+  let mapped = results.ids[0].map((id, i) => {
     const meta = results.metadatas?.[0]?.[i] as Record<string, unknown> || {};
     return {
       id,
@@ -131,6 +135,12 @@ export async function searchSimilar(
       meetingDate: meta.meetingDate as string | undefined,
     };
   });
+
+  // Client-side date filtering (ChromaDB v1 doesn't support $gte/$lte on strings)
+  if (afterDate) mapped = mapped.filter(r => !r.meetingDate || r.meetingDate >= afterDate);
+  if (beforeDate) mapped = mapped.filter(r => !r.meetingDate || r.meetingDate <= beforeDate);
+
+  return mapped.slice(0, limit);
 }
 
 export async function clearCollection(): Promise<void> {
