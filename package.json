@@ -1,0 +1,42 @@
+{
+  "name": "recall",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "MCP server for semantic search over strategy docs and meeting transcripts. Local embeddings via Ollama, embedded ChromaDB.",
+  "main": "dist/server.js",
+  "bin": {
+    "recall": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "index": "tsx src/scripts/auto-index.ts",
+    "lint": "eslint src/**/*.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "rag",
+    "semantic-search",
+    "claude",
+    "ollama"
+  ],
+  "author": "thetenzinwoser",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "chromadb": "^1.10.0",
+    "chromadb-default-embed": "^2.13.2",
+    "zod": "^3.23.8",
+    "glob": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.6",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+logs/
+.env
+
+# Generated plists (created by setup.sh, not templates)
+launchagents/*.plist
+!launchagents/*.plist.template

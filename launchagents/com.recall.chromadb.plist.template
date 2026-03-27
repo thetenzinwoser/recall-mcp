@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.recall.chromadb</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uvx</string>
+        <string>--from</string>
+        <string>chromadb</string>
+        <string>chroma</string>
+        <string>run</string>
+        <string>--host</string>
+        <string>localhost</string>
+        <string>--port</string>
+        <string>8000</string>
+        <string>--path</string>
+        <string>{{RECALL_MCP_DIR}}/data/chroma</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{RECALL_MCP_DIR}}/logs/chromadb-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RECALL_MCP_DIR}}/logs/chromadb-stderr.log</string>
+</dict>
+</plist>
