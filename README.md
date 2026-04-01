@@ -47,6 +47,21 @@ inline in the dashboard."
 
 Claude uses these results to answer your question with the actual context from your notes and meetings.
 
+### Works with
+
+recall-mcp uses the standard MCP stdio transport, so it works with any MCP-compatible client:
+
+| Client | Config file |
+|--------|------------|
+| **Claude Code** (CLI) | `~/.claude.json` |
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Cursor** | Cursor settings > MCP |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+
+The MCP config block is the same across all of them. This README uses Claude Code as the example, but the server doesn't care which client connects to it.
+
+> **Note:** Setup requires comfort with the terminal, or the ability to point your AI tool at this repo and ask it to set things up for you. For example, you can paste this README into Claude Code or Claude Desktop and ask it to clone the repo and run the setup script on your behalf.
+
 ---
 
 ## Prerequisites
@@ -93,9 +108,9 @@ This will:
 - Run an initial index of your docs and Granola transcripts
 - Print the MCP config block to paste into Claude Code
 
-### 4. Add to Claude Code
+### 4. Add to your MCP client
 
-Open `~/.claude.json` and add under `mcpServers`:
+Add this to your client's MCP config (see the "Works with" table above for file locations):
 
 ```json
 "recall": {
@@ -105,7 +120,7 @@ Open `~/.claude.json` and add under `mcpServers`:
 }
 ```
 
-Use the exact path printed at the end of `setup.sh`. Then restart Claude Code and run `/mcp` to confirm it connected.
+Use the exact path printed at the end of `setup.sh`. Then restart your client. In Claude Code, run `/mcp` to confirm it connected.
 
 ---
 
