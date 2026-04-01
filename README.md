@@ -2,6 +2,8 @@
 
 > **TL;DR:** Local semantic search MCP server for markdown docs and Granola meeting transcripts. Ask Claude "what did we decide about X?" and it finds relevant content by meaning. Runs entirely on your machine - no API keys, no cloud, no cost.
 
+Give Claude Code long-term memory over your notes and meetings. It searches by meaning, runs locally, and costs nothing.
+
 ---
 
 ## What this is
@@ -26,6 +28,24 @@ Your markdown files + Granola meetings
 ```
 
 Auto-indexing runs every 15 minutes in the background via a macOS LaunchAgent.
+
+### Example
+
+You ask Claude Code: *"what did we decide about the onboarding flow?"*
+
+recall-mcp searches your docs and meeting transcripts by meaning and returns the relevant chunks:
+
+```
+Source: meetings/product-sync-2026-03-14.md (similarity: 0.82)
+"We agreed to cut the walkthrough video and ship a checklist instead.
+Jamie owns the copy, targeting next sprint."
+
+Source: docs/onboarding/decisions.md (similarity: 0.79)
+"Checklist approach approved — three steps max, no modal,
+inline in the dashboard."
+```
+
+Claude uses these results to answer your question with the actual context from your notes and meetings.
 
 ---
 
