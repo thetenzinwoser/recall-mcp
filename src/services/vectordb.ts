@@ -24,7 +24,9 @@ export async function getCollection(): Promise<Collection> {
   return collection;
 }
 
-export type SourceType = 'strategy-doc' | 'granola-transcript';
+export type SourceType = 'strategy-doc' | 'granola-transcript' | 'wispr-transcript';
+
+export const TRANSCRIPT_SOURCE_TYPES: SourceType[] = ['granola-transcript', 'wispr-transcript'];
 
 export interface DocumentChunk {
   id: string;
@@ -96,7 +98,7 @@ export async function searchSimilar(
     conditions.push({ sourceType: sourceTypes.length === 1 ? sourceTypes[0] : { $in: sourceTypes } });
   } else if (hasDateFilter) {
     // Date filters only apply to transcripts - scope implicitly
-    conditions.push({ sourceType: 'granola-transcript' });
+    conditions.push({ sourceType: { $in: TRANSCRIPT_SOURCE_TYPES } });
   }
 
   const whereFilter = conditions.length === 0
@@ -178,28 +180,26 @@ export async function deleteBySourceType(sourceType: SourceType): Promise<number
 
 export async function getCountsBySourceType(): Promise<Record<SourceType, number>> {
   const coll = await getCollection();
+  const counts = {} as Record<SourceType, number>;
 
-  const strategyDocs = await coll.get({
-    where: { sourceType: 'strategy-doc' },
-    include: [],
-  });
+  for (const sourceType of ['strategy-doc', ...TRANSCRIPT_SOURCE_TYPES] as SourceType[]) {
+    const results = await coll.get({
+      where: { sourceType },
+      include: [],
+    });
+    counts[sourceType] = results.ids.length;
+  }
 
-  const transcripts = await coll.get({
-    where: { sourceType: 'granola-transcript' },
-    include: [],
-  });
-
-  return {
-    'strategy-doc': strategyDocs.ids.length,
-    'granola-transcript': transcripts.ids.length,
-  };
+  return counts;
 }
 
-export async function getIndexedMeetingIds(): Promise<Set<string>> {
+export async function getIndexedMeetingIds(
+  sourceType: SourceType = 'granola-transcript'
+): Promise<Set<string>> {
   const coll = await getCollection();
 
   const results = await coll.get({
-    where: { sourceType: 'granola-transcript' },
+    where: { sourceType },
     include: [IncludeEnum.Metadatas],
   });
 
@@ -232,6 +232,34 @@ export async function getIndexedStrategyDocs(): Promise<Map<string, number>> {
   }
 
   return fileMap;
+}
+
+/**
+ * Delete chunks for specific meetings of a given source type.
+ * Used to remove Granola duplicates of meetings that Wispr also recorded.
+ */
+export async function deleteByMeetingIds(
+  meetingIds: string[],
+  sourceType: SourceType
+): Promise<number> {
+  if (meetingIds.length === 0) return 0;
+
+  const coll = await getCollection();
+  let totalDeleted = 0;
+
+  for (const meetingId of meetingIds) {
+    const results = await coll.get({
+      where: { $and: [{ meetingId }, { sourceType }] },
+      include: [],
+    });
+
+    if (results.ids.length > 0) {
+      await coll.delete({ ids: results.ids });
+      totalDeleted += results.ids.length;
+    }
+  }
+
+  return totalDeleted;
 }
 
 export async function deleteByFilePaths(filePaths: string[]): Promise<number> {

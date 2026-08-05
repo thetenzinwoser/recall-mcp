@@ -5,7 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 import { semanticSearch } from './tools/search.js';
-import { reindexStrategyDocs, indexTranscripts, getIndexStatus } from './tools/reindex.js';
+import { reindexStrategyDocs, indexTranscripts, indexWispr, getIndexStatus } from './tools/reindex.js';
 import { getTranscriptHandler } from './tools/transcript.js';
 
 const server = new McpServer({
@@ -20,7 +20,7 @@ server.tool(
   {
     query: z.string().min(1).describe('The search query - describe what you\'re looking for'),
     limit: z.number().min(1).max(20).optional().default(5).describe('Maximum number of results to return (default: 5, max: 20)'),
-    sourceTypes: z.array(z.enum(['strategy-doc', 'granola-transcript'])).optional().describe('Filter by source type. Omit to search all sources.'),
+    sourceTypes: z.array(z.enum(['strategy-doc', 'granola-transcript', 'wispr-transcript'])).optional().describe('Filter by source type. Omit to search all sources.'),
     afterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only return transcripts on or after this date (YYYY-MM-DD). Automatically scopes to transcripts.'),
     beforeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only return transcripts on or before this date (YYYY-MM-DD). Automatically scopes to transcripts.'),
   },
@@ -51,6 +51,17 @@ server.tool(
   },
   async (args) => {
     const result = await indexTranscripts(args);
+    return { content: [{ type: 'text', text: result }] };
+  }
+);
+
+// index_wispr_transcripts
+server.tool(
+  'index_wispr_transcripts',
+  'Index Wispr Flow meeting transcripts (speaker-attributed) for semantic search. Additive - only indexes new meetings. Also exports new transcripts to markdown.',
+  {},
+  async () => {
+    const result = await indexWispr();
     return { content: [{ type: 'text', text: result }] };
   }
 );
