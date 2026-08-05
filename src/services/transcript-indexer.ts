@@ -14,6 +14,10 @@ import {
 import {
   exportTranscripts,
 } from './transcript-exporter.js';
+import {
+  getLocalTranscriptMetas,
+  LOCAL_TRANSCRIPTS_PATH,
+} from './local-transcripts.js';
 
 export interface IndexTranscriptsOptions {
   meetingIds?: string[];
@@ -166,5 +170,95 @@ export async function indexGranolaTranscripts(
     transcriptsExported,
     exportPath: finalExportPath,
     durationMs,
+  };
+}
+
+export interface IndexLocalTranscriptsResult {
+  meetingsProcessed: number;
+  meetingsSkipped: number;
+  meetingsAlreadyIndexed: number;
+  chunksCreated: number;
+  durationMs: number;
+}
+
+/**
+ * Index transcripts from local markdown files in ~/Documents/granola-transcripts/
+ * Works without any API access. Picks up both previously-exported files and any
+ * manually-dropped transcripts. Already-indexed meetings are skipped.
+ */
+export async function indexLocalTranscripts(): Promise<IndexLocalTranscriptsResult> {
+  const startTime = Date.now();
+
+  console.error(`Scanning local transcripts at ${LOCAL_TRANSCRIPTS_PATH}...`);
+  const localMetas = await getLocalTranscriptMetas();
+  console.error(`Found ${localMetas.length} local transcript files`);
+
+  const indexedMeetingIds = await getIndexedMeetingIds();
+  const toIndex = localMetas.filter((m) => !indexedMeetingIds.has(m.meetingId));
+  const alreadyIndexedCount = localMetas.length - toIndex.length;
+
+  console.error(`To index: ${toIndex.length} (${alreadyIndexedCount} already indexed)`);
+
+  let meetingsProcessed = 0;
+  let meetingsSkipped = 0;
+  let totalChunks = 0;
+  const embeddingBatchSize = 20;
+  const fs = await import('fs/promises');
+
+  for (let i = 0; i < toIndex.length; i++) {
+    const meta = toIndex[i];
+    try {
+      const raw = await fs.readFile(meta.filePath, 'utf-8');
+      // Strip frontmatter
+      const bodyMatch = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+      const content = bodyMatch ? bodyMatch[1].trim() : raw.trim();
+
+      if (!content) {
+        meetingsSkipped++;
+        continue;
+      }
+
+      const chunks = chunkText(content);
+
+      for (let chunkStart = 0; chunkStart < chunks.length; chunkStart += embeddingBatchSize) {
+        const chunkBatch = chunks.slice(chunkStart, chunkStart + embeddingBatchSize);
+        const embeddings = await getEmbeddings(chunkBatch.map((c) => c.text));
+
+        const documents: DocumentChunk[] = chunkBatch.map((chunk, idx) => ({
+          id: `granola:${meta.meetingId}:${chunkStart + idx}`,
+          text: chunk.text,
+          embedding: embeddings[idx],
+          metadata: {
+            sourceType: 'granola-transcript' as const,
+            meetingId: meta.meetingId,
+            meetingTitle: meta.title,
+            meetingDate: meta.date,
+            chunkIndex: chunkStart + idx,
+            startChar: chunk.startChar,
+            endChar: chunk.endChar,
+          },
+        }));
+
+        await addDocuments(documents);
+        totalChunks += documents.length;
+      }
+
+      meetingsProcessed++;
+
+      if ((i + 1) % 10 === 0 || i === toIndex.length - 1) {
+        console.error(`Indexed ${i + 1}/${toIndex.length} local meetings (${totalChunks} chunks)`);
+      }
+    } catch (error) {
+      console.error(`Error processing local file ${meta.filePath}:`, error);
+      meetingsSkipped++;
+    }
+  }
+
+  return {
+    meetingsProcessed,
+    meetingsSkipped,
+    meetingsAlreadyIndexed: alreadyIndexedCount,
+    chunksCreated: totalChunks,
+    durationMs: Date.now() - startTime,
   };
 }

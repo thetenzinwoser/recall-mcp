@@ -5,7 +5,7 @@
  */
 
 import { indexStrategyDocs } from '../services/indexer.js';
-import { indexGranolaTranscripts } from '../services/transcript-indexer.js';
+import { indexGranolaTranscripts, indexLocalTranscripts } from '../services/transcript-indexer.js';
 import { CONFIG } from '../config/config.js';
 
 async function checkOllama(): Promise<boolean> {
@@ -38,8 +38,8 @@ async function main() {
     console.error('Strategy doc indexing failed:', error);
   }
 
-  // Index recent transcripts (incremental) + export to markdown
-  console.log('\n--- Granola Transcripts ---');
+  // Index recent transcripts via API (incremental) + export to markdown
+  console.log('\n--- Granola Transcripts (API) ---');
   try {
     const transcriptResult = await indexGranolaTranscripts({ limit: 50 });
     console.log(`Processed ${transcriptResult.meetingsProcessed} new meetings`);
@@ -50,6 +50,18 @@ async function main() {
     }
   } catch (error) {
     console.error('Transcript indexing failed:', error);
+  }
+
+  // Always index from local files too - picks up manually-exported transcripts
+  // and works as sole source when API is unavailable
+  console.log('\n--- Granola Transcripts (Local Files) ---');
+  try {
+    const localResult = await indexLocalTranscripts();
+    console.log(`Processed ${localResult.meetingsProcessed} new local meetings`);
+    console.log(`Skipped ${localResult.meetingsAlreadyIndexed} (already indexed)`);
+    console.log(`Created ${localResult.chunksCreated} chunks`);
+  } catch (error) {
+    console.error('Local transcript indexing failed:', error);
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
