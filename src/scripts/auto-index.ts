@@ -5,7 +5,7 @@
  */
 
 import { indexStrategyDocs } from '../services/indexer.js';
-import { indexGranolaTranscripts, indexLocalTranscripts } from '../services/transcript-indexer.js';
+import { indexGranolaTranscripts, indexLocalTranscripts, indexWisprTranscripts } from '../services/transcript-indexer.js';
 import { CONFIG } from '../config/config.js';
 
 async function checkOllama(): Promise<boolean> {
@@ -36,6 +36,20 @@ async function main() {
     console.log(`Chunks created: ${docsResult.chunksCreated}, deleted: ${docsResult.chunksDeleted}`);
   } catch (error) {
     console.error('Strategy doc indexing failed:', error);
+  }
+
+  // Index Wispr Flow meetings first - Granola dedup defers to these
+  console.log('\n--- Wispr Flow Transcripts ---');
+  try {
+    const wisprResult = await indexWisprTranscripts();
+    console.log(`Processed ${wisprResult.meetingsProcessed} new Wispr meetings`);
+    console.log(`Skipped ${wisprResult.meetingsAlreadyIndexed} (already indexed)`);
+    console.log(`Created ${wisprResult.chunksCreated} chunks`);
+    if (wisprResult.transcriptsExported > 0) {
+      console.log(`Exported ${wisprResult.transcriptsExported} transcripts to ${wisprResult.exportPath}`);
+    }
+  } catch (error) {
+    console.error('Wispr transcript indexing failed:', error);
   }
 
   // Index recent transcripts via API (incremental) + export to markdown

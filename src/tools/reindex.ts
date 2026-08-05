@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { indexStrategyDocs } from '../services/indexer.js';
 import { getCountsBySourceType } from '../services/vectordb.js';
-import { indexGranolaTranscripts } from '../services/transcript-indexer.js';
+import { indexGranolaTranscripts, indexWisprTranscripts } from '../services/transcript-indexer.js';
 
 const indexTranscriptsSchema = z.object({
   limit: z.number().min(1).optional(),
@@ -47,15 +47,35 @@ export async function indexTranscripts(args: unknown): Promise<string> {
   return response;
 }
 
+export async function indexWispr(): Promise<string> {
+  console.error('Starting Wispr Flow transcript indexing...');
+
+  const result = await indexWisprTranscripts();
+
+  const response = [
+    'Wispr transcript indexing completed!',
+    '',
+    `Meetings processed: ${result.meetingsProcessed}`,
+    `Meetings skipped (no transcript): ${result.meetingsSkipped}`,
+    `Meetings already indexed: ${result.meetingsAlreadyIndexed}`,
+    `Chunks created: ${result.chunksCreated}`,
+    `Transcripts exported: ${result.transcriptsExported}`,
+    `Duration: ${(result.durationMs / 1000).toFixed(2)}s`,
+  ].join('\n');
+
+  return response;
+}
+
 export async function getIndexStatus(): Promise<string> {
   const counts = await getCountsBySourceType();
-  const total = counts['strategy-doc'] + counts['granola-transcript'];
+  const total = counts['strategy-doc'] + counts['granola-transcript'] + counts['wispr-transcript'];
 
   const response = [
     'Index Status:',
     '',
     `Strategy docs: ${counts['strategy-doc']} chunks`,
     `Granola transcripts: ${counts['granola-transcript']} chunks`,
+    `Wispr transcripts: ${counts['wispr-transcript']} chunks`,
     `Total: ${total} chunks`,
   ].join('\n');
 

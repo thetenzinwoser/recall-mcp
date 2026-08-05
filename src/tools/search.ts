@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { getEmbedding } from '../services/embeddings.js';
 import { searchSimilar, SourceType } from '../services/vectordb.js';
 
-const sourceTypeEnum = z.enum(['strategy-doc', 'granola-transcript']);
+const sourceTypeEnum = z.enum(['strategy-doc', 'granola-transcript', 'wispr-transcript']);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD');
 
@@ -72,7 +72,8 @@ export async function semanticSearch(args: unknown): Promise<string> {
     if (result.source_type === 'strategy-doc') {
       response += `**${i + 1}. [Doc] ${result.file_path}** (score: ${result.similarity_score})\n`;
     } else {
-      response += `**${i + 1}. [Transcript] ${result.meeting_title || 'Untitled'}** (${result.meeting_date || 'No date'}, score: ${result.similarity_score})\n`;
+      const label = result.source_type === 'wispr-transcript' ? 'Wispr' : 'Transcript';
+      response += `**${i + 1}. [${label}] ${result.meeting_title || 'Untitled'}** (${result.meeting_date || 'No date'}, score: ${result.similarity_score})\n`;
     }
     response += `${result.excerpt}\n\n`;
   });
@@ -98,9 +99,9 @@ export const searchTool = {
         type: 'array',
         items: {
           type: 'string',
-          enum: ['strategy-doc', 'granola-transcript'],
+          enum: ['strategy-doc', 'granola-transcript', 'wispr-transcript'],
         },
-        description: 'Filter by source type. Omit to search all sources. Use ["strategy-doc"] for docs only, ["granola-transcript"] for transcripts only.',
+        description: 'Filter by source type. Omit to search all sources. Use ["strategy-doc"] for docs only, ["granola-transcript", "wispr-transcript"] for meeting transcripts only.',
       },
       afterDate: {
         type: 'string',

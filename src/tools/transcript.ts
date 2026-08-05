@@ -3,7 +3,49 @@ import {
   listMeetings,
   getTranscript,
   GranolaMeeting,
+  GranolaTranscript,
 } from '../services/granola-api.js';
+import {
+  listWisprMeetings,
+  getWisprTranscript,
+} from '../services/wispr-transcripts.js';
+
+type SourcedMeeting = GranolaMeeting & { source: 'granola' | 'wispr' };
+
+/**
+ * Combined meeting list across Granola and Wispr Flow, newest first.
+ * Wispr meetings are speaker-attributed so they sort alongside Granola's.
+ */
+async function listAllMeetings(limit?: number): Promise<SourcedMeeting[]> {
+  const [granola, wispr] = await Promise.all([
+    listMeetings(limit).catch(() => [] as GranolaMeeting[]),
+    listWisprMeetings().catch(() => []),
+  ]);
+
+  const combined: SourcedMeeting[] = [
+    ...wispr.map((w) => ({
+      id: w.id,
+      title: w.title,
+      createdAt: w.createdAt,
+      updatedAt: w.createdAt,
+      source: 'wispr' as const,
+    })),
+    ...granola.map((g) => ({ ...g, source: 'granola' as const })),
+  ];
+
+  combined.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return limit ? combined.slice(0, limit) : combined;
+}
+
+async function fetchTranscript(meeting: SourcedMeeting): Promise<GranolaTranscript | null> {
+  if (meeting.source === 'wispr') {
+    const wisprMeetings = await listWisprMeetings();
+    const wisprMeeting = wisprMeetings.find((w) => w.id === meeting.id);
+    if (!wisprMeeting) return null;
+    return getWisprTranscript(wisprMeeting);
+  }
+  return getTranscript(meeting.id, meeting.title, meeting.createdAt.split('T')[0]);
+}
 
 export const getTranscriptInputSchema = z.object({
   meetingId: z.string().optional(),
@@ -138,16 +180,16 @@ export async function getTranscriptHandler(args: unknown): Promise<string> {
   }
 
   if (input.listRecent) {
-    const meetings = await listMeetings(input.listRecent);
+    const meetings = await listAllMeetings(input.listRecent);
 
     let response = `**${meetings.length} Most Recent Meetings:**\n\n`;
-    response += '| Date | Title | ID |\n';
-    response += '|------|-------|----|\n';
+    response += '| Date | Title | Source | ID |\n';
+    response += '|------|-------|--------|----|\n';
 
     for (const meeting of meetings) {
       const date = meeting.createdAt.split('T')[0];
       const shortId = meeting.id.slice(0, 8) + '...';
-      response += `| ${date} | ${meeting.title} | \`${shortId}\` |\n`;
+      response += `| ${date} | ${meeting.title} | ${meeting.source} | \`${shortId}\` |\n`;
     }
 
     response += `\n*Use the full meeting ID with \`meetingId\` parameter to fetch transcript.*`;
@@ -155,8 +197,8 @@ export async function getTranscriptHandler(args: unknown): Promise<string> {
   }
 
   if (input.searchTitle) {
-    const meetings = await listMeetings(500);
-    const matches = await findMeetings(input.searchTitle, meetings, input.date);
+    const meetings = await listAllMeetings(500);
+    const matches = (await findMeetings(input.searchTitle, meetings, input.date)) as SourcedMeeting[];
 
     if (matches.length === 0) {
       return `No meetings found matching "${input.searchTitle}"`;
@@ -175,11 +217,7 @@ export async function getTranscriptHandler(args: unknown): Promise<string> {
       response += '\n---\n\n';
     }
 
-    const transcript = await getTranscript(
-      bestMatch.id,
-      bestMatch.title,
-      bestMatch.createdAt.split('T')[0]
-    );
+    const transcript = await fetchTranscript(bestMatch);
 
     if (!transcript) {
       response += `**${bestMatch.title}** (${bestMatch.createdAt.split('T')[0]})\n\n`;
@@ -199,7 +237,7 @@ export async function getTranscriptHandler(args: unknown): Promise<string> {
   }
 
   if (input.meetingId) {
-    const meetings = await listMeetings(1000);
+    const meetings = await listAllMeetings(1000);
     // Support both full and partial ID matching
     const meeting = meetings.find((m) =>
       m.id === input.meetingId || m.id.startsWith(input.meetingId!)
@@ -208,8 +246,9 @@ export async function getTranscriptHandler(args: unknown): Promise<string> {
     const title = meeting?.title || 'Unknown Meeting';
     const date = meeting?.createdAt.split('T')[0] || '';
 
-    const resolvedId = meeting?.id || input.meetingId!;
-    const transcript = await getTranscript(resolvedId, title, date);
+    const transcript = meeting
+      ? await fetchTranscript(meeting)
+      : await getTranscript(input.meetingId!, title, date);
 
     if (!transcript) {
       return `**${title}** (${date})\n\n*No transcript available for meeting ID \`${input.meetingId}\`*`;
