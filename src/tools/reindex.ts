@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { indexStrategyDocs } from '../services/indexer.js';
 import { getCountsBySourceType } from '../services/vectordb.js';
 import { indexGranolaTranscripts, indexWisprTranscripts } from '../services/transcript-indexer.js';
+import { indexClaudeSessions } from '../services/session-indexer.js';
 
 const indexTranscriptsSchema = z.object({
   limit: z.number().min(1).optional(),
@@ -66,9 +67,31 @@ export async function indexWispr(): Promise<string> {
   return response;
 }
 
+export async function indexSessions(): Promise<string> {
+  console.error('Starting Claude Code session indexing...');
+
+  const result = await indexClaudeSessions();
+
+  const response = [
+    'Claude session indexing completed!',
+    '',
+    `Sessions processed: ${result.sessionsProcessed} (${result.sessionsUpdated} updated)`,
+    `Sessions skipped (too small/unreadable): ${result.sessionsSkipped}`,
+    `Sessions unchanged: ${result.sessionsAlreadyIndexed}`,
+    `Chunks created: ${result.chunksCreated}`,
+    `Duration: ${(result.durationMs / 1000).toFixed(2)}s`,
+  ].join('\n');
+
+  return response;
+}
+
 export async function getIndexStatus(): Promise<string> {
   const counts = await getCountsBySourceType();
-  const total = counts['strategy-doc'] + counts['granola-transcript'] + counts['wispr-transcript'];
+  const total =
+    counts['strategy-doc'] +
+    counts['granola-transcript'] +
+    counts['wispr-transcript'] +
+    counts['claude-session'];
 
   const response = [
     'Index Status:',
@@ -76,6 +99,7 @@ export async function getIndexStatus(): Promise<string> {
     `Strategy docs: ${counts['strategy-doc']} chunks`,
     `Granola transcripts: ${counts['granola-transcript']} chunks`,
     `Wispr transcripts: ${counts['wispr-transcript']} chunks`,
+    `Claude sessions: ${counts['claude-session']} chunks`,
     `Total: ${total} chunks`,
   ].join('\n');
 

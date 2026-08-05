@@ -6,6 +6,7 @@
 
 import { indexStrategyDocs } from '../services/indexer.js';
 import { indexGranolaTranscripts, indexLocalTranscripts, indexWisprTranscripts } from '../services/transcript-indexer.js';
+import { indexClaudeSessions } from '../services/session-indexer.js';
 import { CONFIG } from '../config/config.js';
 
 async function checkOllama(): Promise<boolean> {
@@ -76,6 +77,17 @@ async function main() {
     console.log(`Created ${localResult.chunksCreated} chunks`);
   } catch (error) {
     console.error('Local transcript indexing failed:', error);
+  }
+
+  // Index Claude Code session dialogue (incremental by file mtime)
+  console.log('\n--- Claude Code Sessions ---');
+  try {
+    const sessionResult = await indexClaudeSessions();
+    console.log(`Processed ${sessionResult.sessionsProcessed} sessions (${sessionResult.sessionsUpdated} updated)`);
+    console.log(`Skipped ${sessionResult.sessionsSkipped}, unchanged ${sessionResult.sessionsAlreadyIndexed}`);
+    console.log(`Created ${sessionResult.chunksCreated} chunks`);
+  } catch (error) {
+    console.error('Claude session indexing failed:', error);
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);

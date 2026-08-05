@@ -24,9 +24,12 @@ export async function getCollection(): Promise<Collection> {
   return collection;
 }
 
-export type SourceType = 'strategy-doc' | 'granola-transcript' | 'wispr-transcript';
+export type SourceType = 'strategy-doc' | 'granola-transcript' | 'wispr-transcript' | 'claude-session';
 
 export const TRANSCRIPT_SOURCE_TYPES: SourceType[] = ['granola-transcript', 'wispr-transcript'];
+
+// Source types carrying a meetingDate, eligible for afterDate/beforeDate filtering
+export const DATED_SOURCE_TYPES: SourceType[] = [...TRANSCRIPT_SOURCE_TYPES, 'claude-session'];
 
 export interface DocumentChunk {
   id: string;
@@ -97,8 +100,8 @@ export async function searchSimilar(
   if (sourceTypes && sourceTypes.length > 0) {
     conditions.push({ sourceType: sourceTypes.length === 1 ? sourceTypes[0] : { $in: sourceTypes } });
   } else if (hasDateFilter) {
-    // Date filters only apply to transcripts - scope implicitly
-    conditions.push({ sourceType: { $in: TRANSCRIPT_SOURCE_TYPES } });
+    // Date filters only apply to dated sources - scope implicitly
+    conditions.push({ sourceType: { $in: DATED_SOURCE_TYPES } });
   }
 
   const whereFilter = conditions.length === 0
@@ -182,7 +185,7 @@ export async function getCountsBySourceType(): Promise<Record<SourceType, number
   const coll = await getCollection();
   const counts = {} as Record<SourceType, number>;
 
-  for (const sourceType of ['strategy-doc', ...TRANSCRIPT_SOURCE_TYPES] as SourceType[]) {
+  for (const sourceType of ['strategy-doc', ...DATED_SOURCE_TYPES] as SourceType[]) {
     const results = await coll.get({
       where: { sourceType },
       include: [],
