@@ -1,21 +1,21 @@
 # recall-mcp
 
-> **TL;DR:** Local semantic search MCP server for markdown docs and Granola meeting transcripts. Ask Claude "what did we decide about X?" and it finds relevant content by meaning. Runs entirely on your machine - no API keys, no cloud, no cost.
+> **TL;DR:** Local semantic search MCP server over four sources - your markdown docs, Granola meeting transcripts, Wispr Flow transcripts, and your own past Claude Code sessions. Ask Claude "what did we decide about X?" and it finds relevant content by meaning. Runs entirely on your machine - no API keys, no cloud, no cost.
 
-Give Claude Code long-term memory over your notes and meetings. It searches by meaning, runs locally, and costs nothing.
+Give Claude Code long-term memory over your notes, meetings, and past conversations with itself. It searches by meaning, runs locally, and costs nothing.
 
 ---
 
 ## What this is
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that indexes your markdown files and Granola meeting transcripts into a local vector database. Claude Code can then search across everything by meaning, not just keywords.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that indexes four sources into a local vector database: your markdown files, Granola meeting transcripts, Wispr Flow transcripts, and the dialogue from your own past Claude Code sessions. Claude Code can then search across everything by meaning, not just keywords.
 
-You ask something like "what did we decide about the onboarding flow?" and it surfaces relevant chunks from your docs and meeting recordings, even if those exact words never appeared.
+You ask something like "what did we decide about the onboarding flow?" and it surfaces relevant chunks from your docs, meeting recordings, and prior conversations, even if those exact words never appeared.
 
 **How it works:**
 
 ```
-Your markdown files + Granola meetings
+Markdown docs + Granola + Wispr Flow + Claude Code sessions
            |
            v
   Ollama (nomic-embed-text)    <- local embedding model, no API key
@@ -24,7 +24,7 @@ Your markdown files + Granola meetings
        ChromaDB                <- local vector database on localhost:8000
            |
            v
-    5 MCP tools                <- Claude Code calls these during conversations
+    7 MCP tools                <- Claude Code calls these during conversations
 ```
 
 Auto-indexing runs every 15 minutes in the background via a macOS LaunchAgent.
@@ -61,6 +61,36 @@ recall-mcp uses the standard MCP stdio transport, so it works with any MCP-compa
 The MCP config block is the same across all of them. This README uses Claude Code as the example, but the server doesn't care which client connects to it.
 
 > **Note:** Setup requires comfort with the terminal, or the ability to point your AI tool at this repo and ask it to set things up for you. For example, you can paste this README into Claude Code or Claude Desktop and ask it to clone the repo and run the setup script on your behalf.
+
+---
+
+## Sources
+
+recall-mcp indexes four kinds of content. Each is tagged with a `sourceType` so you can filter a search to just one kind (`semantic_search` accepts a `sourceTypes` filter). Every source is optional - if you don't have Granola, Wispr, or Claude Code sessions, doc indexing still works on its own.
+
+| Source | `sourceType` | Where it comes from |
+|--------|-------------|---------------------|
+| Markdown docs | `strategy-doc` | Your `DOCS_PATH` folder, scanned recursively |
+| Granola meetings | `granola-transcript` | Granola desktop app's local data |
+| Wispr Flow meetings | `wispr-transcript` | Wispr Flow's local transcripts (speaker-attributed). Granola dedups against these. |
+| Claude Code sessions | `claude-session` | Your own past conversations in `~/.claude/projects/` |
+
+### Claude Code session capture
+
+This is the source most people won't have seen before, so here's exactly how it works.
+
+Claude Code stores every session as a JSONL file under `~/.claude/projects/<project-slug>/<session-id>.jsonl`, one JSON object per line. recall-mcp reads those files and indexes the **dialogue only** - the actual back-and-forth between you and Claude. Everything else is dropped:
+
+- **Tool calls and tool results** are skipped - they're mostly file dumps already indexed as your docs, and they'd bury the real conversation in noise.
+- **Thinking blocks** are skipped.
+- **Subagent sidechains** (`isSidechain`) are skipped - only the main conversation is kept.
+- **Harness noise** is stripped from your messages: `<system-reminder>` blocks, slash-command wrapper tags, system notifications, interrupt markers, and `local-command-stdout` are all removed before indexing.
+
+What's left is rendered as a clean `User:` / `Claude:` transcript, chunked, embedded, and stored. Each session is titled `[project/path] <title>`, using the session's custom title, then its AI-generated title, then the first user message as a fallback. Sessions with less than 500 characters of real dialogue are dropped as too thin to be useful.
+
+Indexing is **incremental by file mtime** - unchanged sessions are skipped, and a changed session has its old chunks replaced wholesale. Sessions that were active in the **last hour are deferred** so an in-progress conversation isn't re-embedded every cycle; it gets picked up once it goes quiet.
+
+The project-slug directory name (e.g. `-Users-tenzin-Strategy-projects-apollo`) is converted back to a readable path (`Strategy/projects/apollo`) for the title, so search results tell you which project a conversation came from.
 
 ---
 
@@ -105,7 +135,7 @@ This will:
 - Write a `.env` file
 - Generate LaunchAgent plists from templates and load them
 - Start ChromaDB and schedule auto-indexing
-- Run an initial index of your docs and Granola transcripts
+- Run an initial index across all available sources (docs, Granola, Wispr Flow, Claude Code sessions)
 - Print the MCP config block to paste into Claude Code
 
 ### 4. Add to your MCP client
@@ -128,10 +158,12 @@ Use the exact path printed at the end of `setup.sh`. Then restart your client. I
 
 | Tool | What it does |
 |------|-------------|
-| `semantic_search` | Search docs and transcripts by meaning. Accepts `query`, optional `limit` (1-20), optional `sourceTypes` filter. |
+| `semantic_search` | Search all sources by meaning. Accepts `query`, optional `limit` (1-20), optional `sourceTypes` filter (`strategy-doc`, `granola-transcript`, `wispr-transcript`, `claude-session`). |
 | `get_transcript` | Fetch a full meeting transcript. Accepts `meetingId`, `searchTitle` (with optional `date`), or `listRecent`. |
 | `reindex_docs` | Re-scan your docs folder. Incremental - only processes changed files. |
 | `index_granola_transcripts` | Pull and index new Granola meetings. Accepts `limit` and `clearExisting`. |
+| `index_wispr_transcripts` | Index new Wispr Flow transcripts (speaker-attributed). Additive; also exports them to markdown. |
+| `index_claude_sessions` | Index dialogue from past Claude Code sessions. Additive and incremental; sessions active in the last hour are deferred. |
 | `index_status` | Show chunk counts by source type. |
 
 ### get_transcript details
