@@ -47,7 +47,14 @@ export interface DocumentChunk {
     meetingId?: string;
     meetingTitle?: string;
     meetingDate?: string;
+    // YYYYMMDD as a number, derived from meetingDate. ChromaDB v1 only supports
+    // $gte/$lte on numbers, so this is what date filters run against.
+    meetingDateNum?: number;
   };
+}
+
+export function dateToNum(date: string): number {
+  return Number(date.slice(0, 10).replace(/-/g, ''));
 }
 
 export async function addDocuments(chunks: DocumentChunk[]): Promise<void> {
@@ -59,7 +66,11 @@ export async function addDocuments(chunks: DocumentChunk[]): Promise<void> {
     ids: chunks.map(c => c.id),
     embeddings: chunks.map(c => c.embedding),
     documents: chunks.map(c => c.text),
-    metadatas: chunks.map(c => c.metadata),
+    metadatas: chunks.map(c =>
+      c.metadata.meetingDate
+        ? { ...c.metadata, meetingDateNum: dateToNum(c.metadata.meetingDate) }
+        : c.metadata
+    ),
   });
 }
 
@@ -91,8 +102,9 @@ export async function searchSimilar(
   const { limit = 5, sourceTypes, afterDate, beforeDate } = options;
   const coll = await getCollection();
 
-  // ChromaDB v1 only supports comparison operators ($gte/$lte) on numeric fields,
-  // not strings. Date filtering is done client-side after fetching a larger pool.
+  // Date filters run server-side on the numeric meetingDateNum field, so the
+  // nearest-neighbour search only ranks chunks inside the date window. (Filtering
+  // after a top-k query starved recent meetings out of results.)
   const hasDateFilter = !!(afterDate || beforeDate);
 
   const conditions: Record<string, unknown>[] = [];
@@ -103,6 +115,8 @@ export async function searchSimilar(
     // Date filters only apply to dated sources - scope implicitly
     conditions.push({ sourceType: { $in: DATED_SOURCE_TYPES } });
   }
+  if (afterDate) conditions.push({ meetingDateNum: { $gte: dateToNum(afterDate) } });
+  if (beforeDate) conditions.push({ meetingDateNum: { $lte: dateToNum(beforeDate) } });
 
   const whereFilter = conditions.length === 0
     ? undefined
@@ -110,8 +124,7 @@ export async function searchSimilar(
       ? conditions[0]
       : { $and: conditions };
 
-  // Fetch a larger pool when date filtering so we have enough after client-side filtering
-  const fetchLimit = hasDateFilter ? Math.min(limit * 5, 100) : limit;
+  const fetchLimit = limit;
 
   const results = await coll.query({
     queryEmbeddings: [embedding],
@@ -124,7 +137,7 @@ export async function searchSimilar(
     return [];
   }
 
-  let mapped = results.ids[0].map((id, i) => {
+  const mapped = results.ids[0].map((id, i) => {
     const meta = results.metadatas?.[0]?.[i] as Record<string, unknown> || {};
     return {
       id,
@@ -140,10 +153,6 @@ export async function searchSimilar(
       meetingDate: meta.meetingDate as string | undefined,
     };
   });
-
-  // Client-side date filtering (ChromaDB v1 doesn't support $gte/$lte on strings)
-  if (afterDate) mapped = mapped.filter(r => !r.meetingDate || r.meetingDate >= afterDate);
-  if (beforeDate) mapped = mapped.filter(r => !r.meetingDate || r.meetingDate <= beforeDate);
 
   return mapped.slice(0, limit);
 }

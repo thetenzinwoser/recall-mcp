@@ -356,6 +356,7 @@ export async function indexWisprTranscripts(): Promise<IndexWisprResult> {
       const transcript = await getWisprTranscript(meeting);
 
       if (!transcript || !transcript.content.trim()) {
+        console.error(`Skipping Wispr meeting "${meeting.title}" (${meeting.id}): no transcript text`);
         meetingsSkipped++;
         continue;
       }

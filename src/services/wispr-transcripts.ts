@@ -47,9 +47,19 @@ interface SpeakerMap {
 }
 
 async function queryDb(sql: string): Promise<Record<string, unknown>[]> {
-  const { stdout } = await execFileAsync('sqlite3', ['-readonly', '-json', WISPR_DB_PATH, sql], {
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const opts = { maxBuffer: 64 * 1024 * 1024 };
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync('sqlite3', ['-readonly', '-json', WISPR_DB_PATH, sql], opts));
+  } catch (error) {
+    // A plain read-only open can fail with SQLITE_CANTOPEN (14) even though the
+    // file is readable (seen Nov 2026 after Wispr quit). immutable=1 skips the
+    // locking/journal checks. Only used as a fallback, since immutable reads can
+    // see a torn state if Wispr is writing at that moment.
+    const uri = `file:${encodeURI(WISPR_DB_PATH)}?mode=ro&immutable=1`;
+    console.warn('Wispr DB read-only open failed, retrying with immutable=1');
+    ({ stdout } = await execFileAsync('sqlite3', ['-json', uri, sql], opts));
+  }
   const trimmed = stdout.trim();
   return trimmed ? JSON.parse(trimmed) : [];
 }

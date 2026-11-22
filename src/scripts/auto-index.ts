@@ -5,7 +5,7 @@
  */
 
 import { indexStrategyDocs } from '../services/indexer.js';
-import { indexGranolaTranscripts, indexLocalTranscripts, indexWisprTranscripts } from '../services/transcript-indexer.js';
+import { indexWisprTranscripts } from '../services/transcript-indexer.js';
 import { indexClaudeSessions } from '../services/session-indexer.js';
 import { CONFIG } from '../config/config.js';
 
@@ -39,7 +39,7 @@ async function main() {
     console.error('Strategy doc indexing failed:', error);
   }
 
-  // Index Wispr Flow meetings first - Granola dedup defers to these
+  // Index Wispr Flow meetings
   console.log('\n--- Wispr Flow Transcripts ---');
   try {
     const wisprResult = await indexWisprTranscripts();
@@ -53,31 +53,8 @@ async function main() {
     console.error('Wispr transcript indexing failed:', error);
   }
 
-  // Index recent transcripts via API (incremental) + export to markdown
-  console.log('\n--- Granola Transcripts (API) ---');
-  try {
-    const transcriptResult = await indexGranolaTranscripts({ limit: 50 });
-    console.log(`Processed ${transcriptResult.meetingsProcessed} new meetings`);
-    console.log(`Skipped ${transcriptResult.meetingsSkipped} (already indexed)`);
-    console.log(`Created ${transcriptResult.chunksCreated} chunks`);
-    if (transcriptResult.transcriptsExported > 0) {
-      console.log(`Exported ${transcriptResult.transcriptsExported} transcripts to ${transcriptResult.exportPath}`);
-    }
-  } catch (error) {
-    console.error('Transcript indexing failed:', error);
-  }
-
-  // Always index from local files too - picks up manually-exported transcripts
-  // and works as sole source when API is unavailable
-  console.log('\n--- Granola Transcripts (Local Files) ---');
-  try {
-    const localResult = await indexLocalTranscripts();
-    console.log(`Processed ${localResult.meetingsProcessed} new local meetings`);
-    console.log(`Skipped ${localResult.meetingsAlreadyIndexed} (already indexed)`);
-    console.log(`Created ${localResult.chunksCreated} chunks`);
-  } catch (error) {
-    console.error('Local transcript indexing failed:', error);
-  }
+  // Granola indexing removed from the auto run (Nov 22, 2026): no longer using
+  // Granola. index_granola_transcripts is still available as a manual MCP tool.
 
   // Index Claude Code session dialogue (incremental by file mtime)
   console.log('\n--- Claude Code Sessions ---');
