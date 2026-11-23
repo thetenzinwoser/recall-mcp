@@ -4,6 +4,7 @@ import * as path from 'path';
 import { CONFIG } from '../config/config.js';
 import { chunkText } from '../utils/chunker.js';
 import { getEmbeddings } from './embeddings.js';
+import { contextFromPath } from './classifier.js';
 import { addDocuments, deleteByFilePaths, getIndexedStrategyDocs, DocumentChunk } from './vectordb.js';
 
 export interface IndexResult {
@@ -110,6 +111,7 @@ export async function indexStrategyDocs(): Promise<IndexResult> {
               sourceType: 'strategy-doc' as const,
               filePath,
               fileMtime,
+              context: contextFromPath(filePath),
               chunkIndex: chunkStart + idx,
               startChar: chunk.startChar,
               endChar: chunk.endChar,

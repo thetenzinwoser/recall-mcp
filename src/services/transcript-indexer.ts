@@ -3,6 +3,7 @@ import { getEmbeddings } from './embeddings.js';
 import {
   addDocuments,
   deleteBySourceType,
+  deleteByMeetingIds,
   getIndexedMeetingIds,
   DocumentChunk,
 } from './vectordb.js';
@@ -23,8 +24,17 @@ import {
   getWisprTranscript,
   isCoveredByWispr,
   wisprAvailable,
+  wisprPeople,
   WisprMeeting,
 } from './wispr-transcripts.js';
+import {
+  classifyMeeting,
+  applyInferredSpeakers,
+  loadTags,
+  saveTag,
+  participantsOf,
+  CLASSIFIER_MODEL,
+} from './classifier.js';
 
 /**
  * Wispr wins whenever both apps recorded the same meeting. Returns the Wispr
@@ -340,10 +350,17 @@ export async function indexWisprTranscripts(): Promise<IndexWisprResult> {
   console.error(`Found ${meetings.length} Wispr meetings`);
 
   const indexedIds = await getIndexedMeetingIds('wispr-transcript');
-  const toIndex = meetings.filter((m) => !indexedIds.has(m.id));
+  const tags = await loadTags();
+  const roster = Array.from(new Set(meetings.flatMap(wisprPeople)));
+  // New meetings, plus indexed meetings that predate tagging (re-indexed so their
+  // chunks carry context metadata and inferred speaker names).
+  const toIndex = meetings.filter((m) => !indexedIds.has(m.id) || !tags[m.id]);
   const alreadyIndexedCount = meetings.length - toIndex.length;
+  const retagCount = toIndex.filter((m) => indexedIds.has(m.id)).length;
 
-  console.error(`To index: ${toIndex.length} (${alreadyIndexedCount} already indexed)`);
+  console.error(
+    `To index: ${toIndex.length} (${retagCount} re-tagging, ${alreadyIndexedCount} already indexed)`
+  );
 
   let meetingsProcessed = 0;
   let meetingsSkipped = 0;
@@ -361,6 +378,40 @@ export async function indexWisprTranscripts(): Promise<IndexWisprResult> {
         continue;
       }
 
+      // Tag the meeting (context + speaker names) with the local classifier
+      const namedSpeakers = Array.from(
+        new Set(
+          Array.from(transcript.content.matchAll(/^([^:\n]{1,60}):/gm))
+            .map((m) => m[1])
+            .filter((n) => !/^Speaker \d+$/.test(n))
+        )
+      );
+      const result = await classifyMeeting({
+        title: meeting.title,
+        content: transcript.content,
+        candidateNames: wisprPeople(meeting),
+        roster,
+      });
+      const meetingTags = {
+        source: 'wispr' as const,
+        title: meeting.title,
+        date: transcript.meetingDate,
+        context: result.context,
+        context2: result.context2,
+        summary: result.summary,
+        namedSpeakers,
+        inferredSpeakers: result.inferredSpeakers,
+        model: CLASSIFIER_MODEL,
+        taggedAt: new Date().toISOString(),
+      };
+      transcript.content = applyInferredSpeakers(transcript.content, result.inferredSpeakers);
+      const participants = participantsOf(meetingTags).join(', ');
+
+      // Replace any chunks from before tagging
+      if (indexedIds.has(meeting.id)) {
+        await deleteByMeetingIds([meeting.id], 'wispr-transcript');
+      }
+
       const chunks = chunkText(transcript.content);
 
       for (let chunkStart = 0; chunkStart < chunks.length; chunkStart += embeddingBatchSize) {
@@ -376,6 +427,9 @@ export async function indexWisprTranscripts(): Promise<IndexWisprResult> {
             meetingId: transcript.meetingId,
             meetingTitle: transcript.meetingTitle,
             meetingDate: transcript.meetingDate,
+            context: meetingTags.context,
+            context2: meetingTags.context2 || '',
+            participants,
             chunkIndex: chunkStart + idx,
             startChar: chunk.startChar,
             endChar: chunk.endChar,
@@ -386,9 +440,16 @@ export async function indexWisprTranscripts(): Promise<IndexWisprResult> {
         totalChunks += documents.length;
       }
 
-      fetchedTranscripts.push(transcript);
+      // Save tags only after the chunks are in, so a crash mid-meeting retries it
+      await saveTag(meeting.id, meetingTags);
+      if (!indexedIds.has(meeting.id)) fetchedTranscripts.push(transcript);
       meetingsProcessed++;
-      console.error(`Indexed "${transcript.meetingTitle}" (${transcript.meetingDate}, ${totalChunks} chunks total)`);
+      console.error(
+        `Indexed "${transcript.meetingTitle}" (${transcript.meetingDate}) as ${meetingTags.context}` +
+          `${meetingTags.context2 ? '+' + meetingTags.context2 : ''}` +
+          `${Object.keys(result.inferredSpeakers).length ? ' speakers ' + JSON.stringify(result.inferredSpeakers) : ''}` +
+          `, ${totalChunks} chunks total`
+      );
     } catch (error) {
       console.error(`Error processing Wispr meeting ${meeting.id}:`, error);
       meetingsSkipped++;

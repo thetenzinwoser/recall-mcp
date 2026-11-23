@@ -50,6 +50,11 @@ export interface DocumentChunk {
     // YYYYMMDD as a number, derived from meetingDate. ChromaDB v1 only supports
     // $gte/$lte on numbers, so this is what date filters run against.
     meetingDateNum?: number;
+    // Life context from the classifier (work | mable | personal | other);
+    // context2 is a secondary context or ''
+    context?: string;
+    context2?: string;
+    participants?: string;
   };
 }
 
@@ -93,13 +98,15 @@ export interface SearchOptions {
   sourceTypes?: SourceType[];
   afterDate?: string;  // ISO date YYYY-MM-DD, inclusive
   beforeDate?: string; // ISO date YYYY-MM-DD, inclusive
+  context?: string;    // work | mable | personal | other (matches primary or secondary)
+  meetingIds?: string[]; // restrict to these meetings (used for participant filters)
 }
 
 export async function searchSimilar(
   embedding: number[],
   options: SearchOptions = {}
 ): Promise<SearchResult[]> {
-  const { limit = 5, sourceTypes, afterDate, beforeDate } = options;
+  const { limit = 5, sourceTypes, afterDate, beforeDate, context, meetingIds } = options;
   const coll = await getCollection();
 
   // Date filters run server-side on the numeric meetingDateNum field, so the
@@ -117,6 +124,11 @@ export async function searchSimilar(
   }
   if (afterDate) conditions.push({ meetingDateNum: { $gte: dateToNum(afterDate) } });
   if (beforeDate) conditions.push({ meetingDateNum: { $lte: dateToNum(beforeDate) } });
+  if (context) conditions.push({ $or: [{ context }, { context2: context }] });
+  if (meetingIds) {
+    if (meetingIds.length === 0) return [];
+    conditions.push({ meetingId: { $in: meetingIds } });
+  }
 
   const whereFilter = conditions.length === 0
     ? undefined

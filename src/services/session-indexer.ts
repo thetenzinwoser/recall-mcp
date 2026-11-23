@@ -12,6 +12,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { contextFromPath } from './classifier.js';
 import { chunkText } from '../utils/chunker.js';
 import { getEmbeddings } from './embeddings.js';
 import {
@@ -262,6 +263,7 @@ export async function indexClaudeSessions(): Promise<IndexSessionsResult> {
             meetingId: extracted.sessionId,
             meetingTitle: extracted.title,
             meetingDate: extracted.date,
+            context: contextFromPath(session.filePath, extracted.title),
             filePath: session.filePath,
             fileMtime: Math.round(session.mtimeMs),
             chunkIndex: chunkStart + idx,

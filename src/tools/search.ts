@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getEmbedding } from '../services/embeddings.js';
 import { searchSimilar, SourceType } from '../services/vectordb.js';
+import { CONTEXTS, reloadTags, participantsOf } from '../services/classifier.js';
 
 const sourceTypeEnum = z.enum(['strategy-doc', 'granola-transcript', 'wispr-transcript', 'claude-session']);
 
@@ -12,6 +13,8 @@ export const searchInputSchema = z.object({
   sourceTypes: z.array(sourceTypeEnum).optional(),
   afterDate: isoDate.optional(),
   beforeDate: isoDate.optional(),
+  context: z.enum(CONTEXTS).optional(),
+  participant: z.string().min(1).optional(),
 });
 
 export type SearchInput = z.infer<typeof searchInputSchema>;
@@ -32,11 +35,23 @@ export async function semanticSearch(args: unknown): Promise<string> {
 
   const queryEmbedding = await getEmbedding(input.query);
 
+  // Participant filter: resolve to meeting ids from the tag cache (Wispr only)
+  let meetingIds: string[] | undefined;
+  if (input.participant) {
+    const needle = input.participant.toLowerCase();
+    const tags = await reloadTags();
+    meetingIds = Object.entries(tags)
+      .filter(([, t]) => participantsOf(t).some((p) => p.toLowerCase().includes(needle)))
+      .map(([id]) => id);
+  }
+
   const results = await searchSimilar(queryEmbedding, {
     limit: input.limit,
     sourceTypes: input.sourceTypes as SourceType[] | undefined,
     afterDate: input.afterDate,
     beforeDate: input.beforeDate,
+    context: input.context,
+    meetingIds,
   });
 
   if (results.length === 0) {

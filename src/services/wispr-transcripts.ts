@@ -113,7 +113,7 @@ export async function listWisprMeetings(): Promise<WisprMeeting[]> {
   });
 }
 
-function resolveSpeakerNames(speakerMap: SpeakerMap | null): Map<number, string> {
+export function resolveSpeakerNames(speakerMap: SpeakerMap | null): Map<number, string> {
   const names = new Map<number, string>();
   if (!speakerMap?.assignments) return names;
 
@@ -238,4 +238,10 @@ export function isCoveredByWispr(
       normalizeTitle(w.title) === granolaTitle
     );
   });
+}
+
+/** All people Wispr linked to a meeting (contacts + resolved voices). */
+export function wisprPeople(meeting: WisprMeeting): string[] {
+  const people = meeting.speakerMap?.people || {};
+  return Array.from(new Set(Object.values(people).map((p) => p.name).filter((n): n is string => !!n)));
 }

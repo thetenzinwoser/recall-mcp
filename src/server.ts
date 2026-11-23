@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { semanticSearch } from './tools/search.js';
 import { reindexStrategyDocs, indexTranscripts, indexWispr, indexSessions, getIndexStatus } from './tools/reindex.js';
 import { getTranscriptHandler } from './tools/transcript.js';
+import { listMeetings } from './tools/meetings.js';
 
 const server = new McpServer({
   name: 'recall',
@@ -16,16 +17,35 @@ const server = new McpServer({
 // semantic_search
 server.tool(
   'semantic_search',
-  'Search strategy docs and Granola meeting transcripts by meaning, not just keywords. Finds relevant content based on concepts and topics.',
+  'Search strategy docs, Wispr meeting transcripts and Claude Code sessions by meaning, not just keywords. Returns the closest matches (top-k), so it is for finding relevant passages, not exhaustive lists; use list_meetings to enumerate every meeting matching a context/person/date. Every source is tagged with a life context: work, mable (side project), therapy, mentorship, personal, or other. Use the context filter whenever the question is about one area.',
   {
     query: z.string().min(1).describe('The search query - describe what you\'re looking for'),
     limit: z.number().min(1).max(20).optional().default(5).describe('Maximum number of results to return (default: 5, max: 20)'),
     sourceTypes: z.array(z.enum(['strategy-doc', 'granola-transcript', 'wispr-transcript', 'claude-session'])).optional().describe('Filter by source type. Omit to search all sources.'),
     afterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only return transcripts on or after this date (YYYY-MM-DD). Automatically scopes to transcripts.'),
     beforeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only return transcripts on or before this date (YYYY-MM-DD). Automatically scopes to transcripts.'),
+    context: z.enum(['work', 'mable', 'therapy', 'mentorship', 'personal', 'other']).optional().describe('Only return content tagged with this life context (primary or secondary). work = day job, mable = side-project app, therapy = therapy sessions, mentorship = mentoring calls, personal = dating/friends/family/own reflections.'),
+    participant: z.string().min(1).optional().describe('Only return Wispr meetings this person spoke in (case-insensitive name match, includes speakers inferred from the transcript). Scopes to Wispr transcripts.'),
   },
   async (args) => {
     const result = await semanticSearch(args);
+    return { content: [{ type: 'text', text: result }] };
+  }
+);
+
+// list_meetings
+server.tool(
+  'list_meetings',
+  'List EVERY Wispr meeting matching the filters (not top-k), newest first, with a one-line summary, life context and participants. Use this for questions like "all my meetings with Sam about the side project last month". Wispr titles are often wrong; trust the summary. Participants marked (inferred) were named by a local model from the transcript, not by Wispr.',
+  {
+    context: z.enum(['work', 'mable', 'therapy', 'mentorship', 'personal', 'other']).optional().describe('Life context (matches primary or secondary tag).'),
+    participant: z.string().min(1).optional().describe('Person who spoke in the meeting (case-insensitive, partial name ok).'),
+    afterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('On or after this date (YYYY-MM-DD).'),
+    beforeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('On or before this date (YYYY-MM-DD).'),
+    limit: z.number().min(1).max(500).optional().default(100).describe('Max meetings to return (default 100).'),
+  },
+  async (args) => {
+    const result = await listMeetings(args);
     return { content: [{ type: 'text', text: result }] };
   }
 );
