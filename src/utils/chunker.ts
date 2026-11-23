@@ -6,6 +6,20 @@ export interface Chunk {
   endChar: number;
 }
 
+/**
+ * Move a cut point off the middle of a surrogate pair (emoji and other
+ * characters outside the BMP take two UTF-16 units). Splitting one leaves a
+ * lone surrogate, which ChromaDB rejects as invalid JSON.
+ */
+function safeCut(text: string, i: number): number {
+  if (i <= 0 || i >= text.length) return i;
+  const code = text.charCodeAt(i);
+  const prev = text.charCodeAt(i - 1);
+  const isLow = code >= 0xdc00 && code <= 0xdfff;
+  const prevIsHigh = prev >= 0xd800 && prev <= 0xdbff;
+  return isLow && prevIsHigh ? i - 1 : i;
+}
+
 export function chunkText(text: string): Chunk[] {
   const chunks: Chunk[] = [];
 
@@ -36,6 +50,8 @@ export function chunkText(text: string): Chunk[] {
       }
     }
 
+    endChar = safeCut(text, endChar);
+
     const chunkText = text.slice(startChar, endChar).trim();
 
     if (chunkText.length > 0) {
@@ -47,7 +63,7 @@ export function chunkText(text: string): Chunk[] {
     }
 
     const prevStart = startChar;
-    startChar = endChar - overlapChars;
+    startChar = safeCut(text, endChar - overlapChars);
 
     if (endChar >= text.length || startChar <= prevStart) break;
   }
